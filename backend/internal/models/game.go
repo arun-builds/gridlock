@@ -33,5 +33,8 @@ type RoomState struct {
 	RoomId        string          `json:"roomId"`
 	Status        string          `json:"status"`
 	TimeRemaining int             `json:"timeRemaining"` // "waiting", "playing", "finished"
+	MaxTime       int             `json:"maxTime"`    // NEW: For when we hit Rematch
+	GridWidth     int             `json:"gridWidth"`  
+	GridHeight    int             `json:"gridHeight"` 
 	Grid          map[string]Tile `json:"grid"`             // Internal map for fast O(1) lookups. Not sent in JSON.
 }

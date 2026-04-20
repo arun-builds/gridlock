@@ -147,10 +147,10 @@ export default function GameRoom({ token, roomId }: { token: string; roomId: str
       {/* Grid */}
       <div 
         className="w-full aspect-square bg-zinc-900 border-2 border-zinc-800 rounded-lg p-2 gap-1 grid"
-        style={{ gridTemplateColumns: 'repeat(20, minmax(0, 1fr))' }}
+        style={{ gridTemplateColumns: `repeat(${gameState.gridWidth}, minmax(0, 1fr))` }}
       >
-        {Array.from({ length: 20 }).map((_, y) => (
-          Array.from({ length: 20 }).map((_, x) => (
+        {Array.from({ length: gameState.gridHeight }).map((_, y) => (
+          Array.from({ length: gameState.gridWidth }).map((_, x) => (
             <button
               key={`${x}-${y}`}
               className={`w-full h-full rounded-sm transition-colors duration-75 ${getTileClasses(x, y)}`}

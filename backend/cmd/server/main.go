@@ -33,14 +33,29 @@ func main() {
 	http.HandleFunc("/api/rooms", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
-		// The Manager locks memory, spins up the goroutine, and returns the code
-		roomCode := manager.CreateRoom()
+		var settings struct {
+			Width     int `json:"width"`
+			Height    int `json:"height"`
+			TimeLimit int `json:"timeLimit"`
+		}
+		json.NewDecoder(r.Body).Decode(&settings)
+
+		// Set defaults 
+		if settings.Width == 0 { settings.Width = 20 }
+		if settings.Height == 0 { settings.Height = 20 }
+		if settings.TimeLimit == 0 { settings.TimeLimit = 60 }
+
+		roomCode := manager.CreateRoom(settings.Width, settings.Height, settings.TimeLimit)
+
+
+	
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{

@@ -12,6 +12,9 @@ export interface Tile {
 export interface GameState {
     status: "disconnected" | "connecting" | "waiting" | "playing" | "finished";
     timeRemaining: number;
+    maxTime: number;
+    gridWidth: number;
+    gridHeight: number;
     grid: Record<string, Tile>; // Using a dictionary for fast lookups by "x,y"
     winnerId?: string;                     
     scores?: Record<string, number>;       
@@ -21,6 +24,9 @@ export function useGameEngine(roomId: string, token: string) {
     const [gameState, setGameState] = useState<GameState>({
         status: "disconnected",
         timeRemaining: 60,
+        maxTime: 60,
+        gridWidth: 20,
+        gridHeight: 20,
         grid: {},
     });
 
@@ -67,6 +73,9 @@ export function useGameEngine(roomId: string, token: string) {
                         ...prev,
                         status: message.payload.status,
                         timeRemaining: message.payload.timeRemaining,
+                        maxTime: message.payload.maxTime ?? prev.maxTime,
+                        gridWidth: message.payload.gridWidth ?? prev.gridWidth,
+                        gridHeight: message.payload.gridHeight ?? prev.gridHeight,
                         grid: message.payload.grid || {},
                         winnerId: undefined,
                         scores: undefined,

@@ -17,11 +17,11 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) CreateRoom() string {
+func (m *Manager) CreateRoom(width int, height int, timeLimit int) string {
 
 	code := generateRoomCode()
 
-	newRoom := NewRoom(code)
+	newRoom := NewRoom(code, width, height, timeLimit)
 
 	m.mu.Lock()
 	m.rooms[code] = newRoom

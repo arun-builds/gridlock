@@ -33,13 +33,16 @@ type PlayerAction struct {
 
 // creates a new instance of a room and returns a pointer to it.
 
-func NewRoom(id string) *Room {
+func NewRoom(id string, width int, height int, timeLimit int) *Room {
 	return &Room{
 		Id: id,
 		State: &models.RoomState{
 			RoomId:        id,
 			Status:        "waiting",
-			TimeRemaining: 60,
+			TimeRemaining: timeLimit,
+			MaxTime:       timeLimit,
+			GridWidth:     width,
+			GridHeight:    height,
 			Grid:          make(map[string]models.Tile),
 		},
 		Clients:    make(map[*models.Client]bool),
@@ -230,7 +233,7 @@ func (r *Room) Run() {
 			if r.State.Status == "finished" {
 				// 1. Wipe the state clean
 				r.State.Status = "waiting"
-				r.State.TimeRemaining = 60
+				r.State.TimeRemaining = r.State.MaxTime
 				r.State.Grid = make(map[string]models.Tile)
 				dirtyTiles = make(map[string]models.Tile)
 
