@@ -22,6 +22,20 @@ func main() {
 		log.Fatal("FATAL: JWT_SECRET environment variable is not set. Server cannot start.")
 	}
 
+	allowedOrigin := os.Getenv("FRONTEND_URL")
+	appEnv := os.Getenv("APP_ENV")
+
+	if allowedOrigin == "" {
+		if appEnv == "production" {
+			
+			log.Fatal("FATAL: FRONTEND_URL must be set in production to prevent CORS vulnerabilities.")
+		} else {
+			
+			log.Println("Notice: FRONTEND_URL not set. Defaulting to local React port for development.")
+			allowedOrigin = "http://localhost:5173" 
+		}
+	}
+
 	port := os.Getenv("PORT")
 
 	if port == "" {
@@ -31,7 +45,9 @@ func main() {
 	manager := game.NewManager()
 
 	http.HandleFunc("/api/rooms", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		
+
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
@@ -64,7 +80,7 @@ func main() {
 	})
 
 	http.HandleFunc("/api/join", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
