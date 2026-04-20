@@ -22,19 +22,29 @@ export function useGameEngine(roomId: string, token: string) {
         grid: {},
     });
 
+    const [localUserId, setLocalUserId] = useState<string>("");
+
     const wsRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
-        // 1. Establish connection
+
+        try {
+            const payloadBase64 = token.split(".")[1];
+            const payloadJson = JSON.parse(atob(payloadBase64));
+            setLocalUserId(payloadJson.userId);
+        } catch (err) {
+            console.error("Failed to decode token", err);
+        }
+
         setGameState((prev) => ({ ...prev, status: "connecting" }));
         const ws = new WebSocket("ws://localhost:8080/ws");
         wsRef.current = ws;
 
         ws.onopen = () => {
-            // 2. Fire the handshake contract
+
             ws.send(JSON.stringify({
                 type: "JOIN_ROOM",
-                payload: { roomId, token }
+                payload: { token }
             }));
         };
 
@@ -95,5 +105,5 @@ export function useGameEngine(roomId: string, token: string) {
         }
     }, []);
 
-    return { gameState, interactWithTile };
+    return { gameState, interactWithTile, localUserId };
 }

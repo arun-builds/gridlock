@@ -1,69 +1,88 @@
-"use client";
+import { useState } from "react";
+import GameRoom from "./components/GameRoom";
 
-import { useEffect, useRef, useState } from "react";
+export default function App() {
+  const [nickname, setNickname] = useState("");
+  const [token, setToken] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [isJoining, setIsJoining] = useState(false);
 
-export default function Home() {
-  const [status, setStatus] = useState("Disconnected");
-  const wsRef = useRef<WebSocket | null>(null);
+  const handleJoinLobby = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
 
-  useEffect(() => {
-    // 1. Open the WebSocket connection
-    const ws = new WebSocket("ws://localhost:8080/ws");
-    wsRef.current = ws;
+    if (!nickname.trim()) {
+      setError("Please enter a nickname.");
+      return;
+    }
 
-    // 2. Handle connection open
-    ws.onopen = () => {
-      setStatus("Connected");
-      console.log("Successfully connected to Go backend.");
+    setIsJoining(true);
 
-      // Fire our first test contract payload
-      const testPayload = {
-        type: "JOIN_ROOM",
-        payload: { roomId: "test-lobby-1", token: "mock-jwt" }
-      };
-      ws.send(JSON.stringify(testPayload));
-    };
+    try {
+      // Hit your Go server
+      const response = await fetch("http://localhost:8080/api/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nickname }),
+      });
 
-    // 3. Handle incoming messages from Go
-    ws.onmessage = (event) => {
-      console.log("Message from server:", event.data);
-    };
+      if (!response.ok) throw new Error("Failed to join the server.");
 
-    // 4. Handle disconnection
-    ws.onclose = () => {
-      setStatus("Disconnected");
-    };
+      const data = await response.json();
+      setToken(data.token);
+    } catch (err) {
+      setError("Could not connect to the GridLock backend.");
+      console.error(err);
+    } finally {
+      setIsJoining(false);
+    }
+  };
 
-    // Cleanup on unmount
-    return () => {
-      ws.close();
-    };
-  }, []);
+  // If we have a token, mount the game!
+  if (token) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 text-white p-4">
+        <GameRoom token={token} />
+      </main>
+    );
+  }
 
+  // Otherwise, show the Lobby
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-zinc-950 text-white">
-      <h1 className="text-4xl font-bold mb-4">GridLock Engine Test</h1>
+    <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 text-white p-4">
+      <div className="w-full max-w-md bg-zinc-900 p-8 rounded-xl border border-zinc-800 shadow-2xl">
+        <div className="text-center mb-8">
+          <h1 className="text-5xl font-black tracking-tighter mb-2">GridLock</h1>
+          <p className="text-zinc-400">High-speed tactical territory control.</p>
+        </div>
 
-      <div className="flex items-center gap-2">
-        <span className="text-lg">Status:</span>
-        <span className={`font-mono px-3 py-1 rounded ${status === 'Connected' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-          {status}
-        </span>
+        <form onSubmit={handleJoinLobby} className="flex flex-col gap-4">
+          <div>
+            <label htmlFor="nickname" className="block text-sm font-medium text-zinc-400 mb-1">
+              Choose your alias
+            </label>
+            <input
+              id="nickname"
+              type="text"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="e.g. DevKing"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              maxLength={15}
+            />
+          </div>
+
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={isJoining}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-bold py-3 rounded-lg transition-colors mt-2"
+          >
+            {isJoining ? "Connecting..." : "Deploy to Grid"}
+          </button>
+        </form>
       </div>
-
-      <button
-        className="mt-8 px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition-colors"
-        onClick={() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({
-              type: "TILE_INTERACT",
-              payload: { x: 5, y: 10 }
-            }));
-          }
-        }}
-      >
-        Send Test Click
-      </button>
     </main>
   );
 }

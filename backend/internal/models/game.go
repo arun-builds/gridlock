@@ -33,5 +33,5 @@ type RoomState struct {
 	RoomId        string          `json:"roomId"`
 	Status        string          `json:"status"`
 	TimeRemaining int             `json:"timeRemaining"` // "waiting", "playing", "finished"
-	Grid          map[string]Tile `json:"-"`             // Internal map for fast O(1) lookups. Not sent in JSON.
+	Grid          map[string]Tile `json:"grid"`             // Internal map for fast O(1) lookups. Not sent in JSON.
 }

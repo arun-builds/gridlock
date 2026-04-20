@@ -1,10 +1,11 @@
 package ws
 
 import (
-	"fmt"
+	"encoding/json"
 	"log"
 	"net/http"
 
+	"github.com/arun-builds/gridlock-backend/internal/auth"
 	"github.com/arun-builds/gridlock-backend/internal/game"
 	"github.com/arun-builds/gridlock-backend/internal/models"
 	"github.com/gorilla/websocket"
@@ -18,6 +19,13 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+type InitMessage struct {
+	Type    string `json:"type"`
+	Payload struct {
+		Token string `json:"token"`
+	} `json:"payload"`
+}
+
 func ServeWs(room *game.Room, w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -27,16 +35,37 @@ func ServeWs(room *game.Room, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//test user
-	mockClient := models.Client{
-		Id:       "dev-user-123",
-		Nickname: "TestPlayer",
+	_, messageBytes, err := conn.ReadMessage()
+
+	if err != nil {
+		conn.Close()
+		return
+	}
+
+	var initMessage InitMessage
+
+	if err := json.Unmarshal(messageBytes, &initMessage); err != nil || initMessage.Type != "JOIN_ROOM" {
+		log.Println("Invalid handshake format. Dropping connection.")
+		conn.Close()
+		return
+	}
+
+	userId, nickname, err := auth.ValidateToken(initMessage.Payload.Token)
+	if err != nil {
+		log.Println("Unauthorized WebSocket attempt:", err)
+		conn.Close()
+		return
+	}
+
+	clientPtr := &models.Client{
+		Id:       userId,
+		Nickname: nickname,
 		Conn:     conn,
 		Send:     make(chan []byte, 256),
 	}
-	clientPtr := &mockClient
 
-	// 3. Send the client pointer to the Room's register channel
+	//  Send the client pointer to the Room's register channel
+	// Register the verified client to the game engine
 	room.Register <- clientPtr
 
 	// Listens for messages from client
@@ -51,7 +80,25 @@ func ServeWs(room *game.Room, w http.ResponseWriter, r *http.Request) {
 				log.Println("Client disconnected:", err)
 				break
 			}
-			fmt.Printf("Received payload from client: %s\n", message)
+
+			var genericMessage struct {
+				Type    string `json:"type"`
+				Payload struct {
+					X int `json:"x"`
+					Y int `json:"y"`
+				} `json:"payload"`
+			}
+
+			if err := json.Unmarshal(message, &genericMessage); err == nil {
+				if genericMessage.Type == "TILE_INTERACT" {
+					// Push the formatted action into the Game Engine channel
+					room.Action <- game.PlayerAction{
+						ClientId: clientPtr.Id, // The server knows exactly who this is securely
+						X:        genericMessage.Payload.X,
+						Y:        genericMessage.Payload.Y,
+					}
+				}
+			}
 
 		}
 
