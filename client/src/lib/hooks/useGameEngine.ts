@@ -13,6 +13,8 @@ export interface GameState {
     status: "disconnected" | "connecting" | "waiting" | "playing" | "finished";
     timeRemaining: number;
     grid: Record<string, Tile>; // Using a dictionary for fast lookups by "x,y"
+    winnerId?: string;                     
+    scores?: Record<string, number>;       
 }
 
 export function useGameEngine(roomId: string, token: string) {
@@ -89,8 +91,14 @@ export function useGameEngine(roomId: string, token: string) {
                     break;
 
                 case "MATCH_END":
-                    setGameState((prev) => ({ ...prev, status: "finished" }));
-                    // In a real app, you'd also save the winner/scores to state here
+                    setGameState((prev) => ({
+                        ...prev,
+                        status: "finished",
+                        winnerId: message.payload.winnerId,
+                        scores: message.payload.scores,
+                    }));
+                    break;
+                default:
                     break;
             }
         };

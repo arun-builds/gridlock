@@ -73,6 +73,50 @@ export default function GameRoom({ token }: { token: string }) {
     return <div className="text-zinc-400 animate-pulse mt-20">Establishing secure link to Go Server...</div>;
   }
 
+  // NEW: The Game Over Screen
+  if (gameState.status === "finished") {
+    const isTie = gameState.winnerId === "TIE";
+    const iWon = gameState.winnerId === localUserId;
+
+    // Find our own score, defaulting to 0 if we didn't capture anything
+    const myScore = gameState.scores?.[localUserId] || 0;
+
+    return (
+      <div className="flex flex-col items-center justify-center w-full max-w-2xl mx-auto mt-20 bg-zinc-900 p-8 rounded-2xl border border-zinc-800 shadow-2xl">
+        <h2 className="text-5xl font-black mb-2 uppercase tracking-tighter">
+          {isTie ? "Stalemate" : iWon ? "Victory" : "Defeat"}
+        </h2>
+
+        <p className="text-zinc-400 mb-8 text-lg">
+          {isTie ? "The grid remains divided." : iWon ? "You control the grid." : "You were overrun."}
+        </p>
+
+        <div className="flex items-center gap-6 mb-8 bg-zinc-950 p-6 rounded-xl border border-zinc-800 w-full justify-between">
+          <div className="flex flex-col">
+            <span className="text-sm text-zinc-500 uppercase">Your Territory</span>
+            <span className="text-3xl font-mono text-white">{myScore} tiles</span>
+          </div>
+
+          {!isTie && !iWon && gameState.winnerId && (
+            <div className="flex flex-col items-end">
+              <span className="text-sm text-zinc-500 uppercase">Winner's Territory</span>
+              <span className="text-3xl font-mono text-red-400">
+                {gameState.scores?.[gameState.winnerId] || 0} tiles
+              </span>
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={() => window.location.reload()}
+          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-lg transition-colors"
+        >
+          Disconnect & Return to Lobby
+        </button>
+      </div>
+    );
+  }
+
   // Figure out what color YOU are
   const myColor = localUserId ? getColorForId(localUserId) : "bg-zinc-800";
 
@@ -85,7 +129,7 @@ export default function GameRoom({ token }: { token: string }) {
           <div className="flex items-center gap-2">
             <div className={`w-4 h-4 rounded-full ${myColor}`} />
             <span className="text-sm font-mono text-zinc-300">
-              {localUserId.split('-')[0]} 
+              {localUserId ? localUserId.split("-")[0] : "unknown"}
             </span>
           </div>
         </div>

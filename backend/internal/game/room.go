@@ -142,6 +142,49 @@ func (r *Room) Run() {
 
 				if r.State.TimeRemaining <= 0 {
 					r.State.Status = "finished"
+
+					scores := make(map[string]int)
+					highestScore := 0
+					winnerId := ""
+					isTie := false
+
+					for _, tile := range r.State.Grid{
+						if tile.OwnerID != ""{
+							scores[tile.OwnerID]++
+
+							if scores[tile.OwnerID] > highestScore{
+								highestScore = scores[tile.OwnerID]
+								winnerId = tile.OwnerID
+								isTie = false
+							}else if scores[tile.OwnerID] == highestScore{
+								isTie = true
+							}
+
+						}
+					}
+
+					if isTie {
+						winnerId = "TIE"
+					}
+
+					endMsg := map[string]interface{}{
+						"type": "MATCH_END",
+						"payload": map[string]interface{}{
+							"winnerId": winnerId,
+							"scores":   scores,
+						},
+					}
+					endMsgBytes, _ := json.Marshal(endMsg)
+
+					for client := range r.Clients {
+						select {
+						case client.Send <- endMsgBytes:
+						default:
+							close(client.Send)
+							delete(r.Clients, client)
+						}
+					}
+
 				}
 			}
 			// Send a tick if tiles were clicked OR if the clock counted down
