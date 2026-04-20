@@ -49,7 +49,13 @@ export function useGameEngine(roomId: string, token: string) {
         };
 
         ws.onmessage = (event) => {
-            const message = JSON.parse(event.data);
+            let message: any;
+            try {
+                message = JSON.parse(event.data);
+            } catch (err) {
+                console.warn("Ignoring non-JSON WebSocket message", err);
+                return;
+            }
 
             // 3. Handle the exact JSON contracts from the Go server
             switch (message.type) {
@@ -67,13 +73,16 @@ export function useGameEngine(roomId: string, token: string) {
                     // High-frequency updates during gameplay
                     setGameState((prev) => {
                         const newGrid = { ...prev.grid };
+                        const payload = message?.payload ?? {};
+                        const updates: Tile[] = Array.isArray(payload.updates) ? payload.updates : [];
                         // Merge only the tiles that changed
-                        message.payload.updates.forEach((tile: Tile) => {
+                        updates.forEach((tile: Tile) => {
                             newGrid[`${tile.x},${tile.y}`] = tile;
                         });
                         return {
                             ...prev,
-                            timeRemaining: message.payload.timeRemaining,
+                            status: payload.status || prev.status,
+                            timeRemaining: typeof payload.timeRemaining === "number" ? payload.timeRemaining : prev.timeRemaining,
                             grid: newGrid,
                         };
                     });
@@ -91,7 +100,13 @@ export function useGameEngine(roomId: string, token: string) {
         };
 
         return () => {
-            ws.close();
+            ws.onopen = null;
+            ws.onmessage = null;
+            ws.onclose = null;
+
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.close(1000, "component unmounted");
+            }
         };
     }, [roomId, token]);
 

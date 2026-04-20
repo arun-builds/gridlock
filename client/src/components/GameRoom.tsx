@@ -1,23 +1,55 @@
+import { useMemo } from "react";
 import { useGameEngine } from "../lib/hooks/useGameEngine";
 
 
 const PLAYER_COLORS = [
-  "bg-blue-500", "bg-red-500", "bg-emerald-500", 
-  "bg-purple-500", "bg-pink-500", "bg-amber-500", "bg-cyan-500"
+  "bg-blue-500", "bg-red-500", "bg-emerald-500", "bg-purple-500",
+  "bg-pink-500", "bg-amber-500", "bg-cyan-500", "bg-lime-500",
+  "bg-orange-500", "bg-fuchsia-500", "bg-teal-500", "bg-indigo-500",
 ];
 
-
-const getColorForId = (id: string) => {
+const hashPlayerId = (id: string) => {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = id.charCodeAt(i) + ((hash << 5) - hash);
   }
-  return PLAYER_COLORS[Math.abs(hash) % PLAYER_COLORS.length];
+  return Math.abs(hash);
 };
 
 export default function GameRoom({ token }: { token: string }) {
 
   const { gameState, interactWithTile, localUserId } = useGameEngine("test-lobby-1", token);
+
+  const colorByOwnerId = useMemo(() => {
+    const ownerIds = new Set<string>();
+    if (localUserId) ownerIds.add(localUserId);
+
+    Object.values(gameState.grid).forEach((tile) => {
+      if (tile.ownerId) ownerIds.add(tile.ownerId);
+    });
+
+    const sortedIds = Array.from(ownerIds).sort();
+    const usedIndexes = new Set<number>();
+    const colorMap: Record<string, string> = {};
+
+    sortedIds.forEach((ownerId) => {
+      const startIndex = hashPlayerId(ownerId) % PLAYER_COLORS.length;
+      let colorIndex = startIndex;
+      let attempts = 0;
+
+      while (usedIndexes.has(colorIndex) && attempts < PLAYER_COLORS.length) {
+        colorIndex = (colorIndex + 1) % PLAYER_COLORS.length;
+        attempts++;
+      }
+
+      usedIndexes.add(colorIndex);
+      colorMap[ownerId] = PLAYER_COLORS[colorIndex];
+    });
+
+    return colorMap;
+  }, [gameState.grid, localUserId]);
+
+  const getColorForId = (id: string) => colorByOwnerId[id] ?? PLAYER_COLORS[hashPlayerId(id) % PLAYER_COLORS.length];
 
   const getTileClasses = (x: number, y: number) => {
     const tileKey = `${x},${y}`;

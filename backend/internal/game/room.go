@@ -57,6 +57,7 @@ func (r *Room) Run() {
 	defer ticker.Stop()
 
 	dirtyTiles := make(map[string]models.Tile)
+	tickCount := 0
 
 	for {
 		select {
@@ -83,6 +84,15 @@ func (r *Room) Run() {
 		// player clicks a tile (The Tug-of-War logic )
 
 		case action := <-r.Action:
+
+			// Reject all clicks if the match is over
+			if r.State.Status == "finished" {
+				continue
+			}
+
+			if r.State.Status == "waiting" {
+				r.State.Status = "playing"
+			}
 			// Because only this loop modifies the grid, no Mutex is needed!
 			tileKey := fmt.Sprintf("%d,%d", action.X, action.Y)
 
@@ -119,7 +129,24 @@ func (r *Room) Run() {
 			dirtyTiles[tileKey] = tile
 
 		case <-ticker.C:
-			if len(dirtyTiles) > 0 {
+			stateChangedThisTick := false
+
+			if r.State.Status == "playing" {
+				tickCount++
+				// 10 ticks * 100ms = 1 full second
+				if tickCount >= 10 {
+					tickCount = 0
+					r.State.TimeRemaining--
+					stateChangedThisTick = true // Force a broadcast so React updates the clock
+				}
+
+				if r.State.TimeRemaining <= 0 {
+					r.State.Status = "finished"
+				}
+			}
+			// Send a tick if tiles were clicked OR if the clock counted down
+
+			if len(dirtyTiles) > 0 || stateChangedThisTick {
 				// Convert the map to an array for JSON
 				var updates []models.Tile
 				for _, t := range dirtyTiles {
@@ -129,6 +156,7 @@ func (r *Room) Run() {
 				tickMessage := map[string]interface{}{
 					"type": "STATE_TICK",
 					"payload": map[string]interface{}{
+						"status":        r.State.Status,
 						"timeRemaining": r.State.TimeRemaining,
 						"updates":       updates,
 					},
