@@ -22,11 +22,12 @@ var upgrader = websocket.Upgrader{
 type InitMessage struct {
 	Type    string `json:"type"`
 	Payload struct {
-		Token string `json:"token"`
+		Token  string `json:"token"`
+		RoomId string `json:"roomId"`
 	} `json:"payload"`
 }
 
-func ServeWs(room *game.Room, w http.ResponseWriter, r *http.Request) {
+func ServeWs(manager *game.Manager, w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 
@@ -53,6 +54,13 @@ func ServeWs(room *game.Room, w http.ResponseWriter, r *http.Request) {
 	userId, nickname, err := auth.ValidateToken(initMessage.Payload.Token)
 	if err != nil {
 		log.Println("Unauthorized WebSocket attempt:", err)
+		conn.Close()
+		return
+	}
+
+	room, exists := manager.GetRoom(initMessage.Payload.RoomId)
+	if !exists {
+		log.Printf("Player %s tried to join invalid room %s", nickname, initMessage.Payload.RoomId)
 		conn.Close()
 		return
 	}

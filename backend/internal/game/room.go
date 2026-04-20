@@ -125,7 +125,7 @@ func (r *Room) Run() {
 						tile.Health = 100
 					}
 				}
-				// Keep flashing/contested while reclaiming damaged territory.
+				
 				// It only becomes stable once fully fortified.
 				tile.Contested = tile.Health < 100
 			}

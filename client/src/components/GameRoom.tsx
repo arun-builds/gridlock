@@ -16,9 +16,9 @@ const hashPlayerId = (id: string) => {
   return Math.abs(hash);
 };
 
-export default function GameRoom({ token }: { token: string }) {
+export default function GameRoom({ token, roomId }: { token: string; roomId: string }) {
 
-  const { gameState, interactWithTile,resetGame, localUserId } = useGameEngine("test-lobby-1", token);
+  const { gameState, interactWithTile, resetGame, localUserId } = useGameEngine(roomId, token);
 
   const colorByOwnerId = useMemo(() => {
     const ownerIds = new Set<string>();
@@ -122,6 +122,13 @@ export default function GameRoom({ token }: { token: string }) {
               {localUserId ? localUserId.split("-")[0] : "unknown"}
             </span>
           </div>
+        </div>
+
+        <div className="flex flex-col items-center">
+          <span className="text-xs text-zinc-500 uppercase tracking-wider">Room Code</span>
+          <span className="text-blue-400 font-mono font-bold tracking-widest bg-blue-900/30 px-2 py-1 rounded">
+            {roomId}
+          </span>
         </div>
 
         <div className="flex flex-col items-center">

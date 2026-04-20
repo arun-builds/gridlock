@@ -46,7 +46,7 @@ export function useGameEngine(roomId: string, token: string) {
 
             ws.send(JSON.stringify({
                 type: "JOIN_ROOM",
-                payload: { token }
+                payload: { token, roomId }
             }));
         };
 
