@@ -97,6 +97,8 @@ func ServeWs(room *game.Room, w http.ResponseWriter, r *http.Request) {
 						X:        genericMessage.Payload.X,
 						Y:        genericMessage.Payload.Y,
 					}
+				} else if genericMessage.Type == "RESET_ROOM" {
+					room.Reset <- true
 				}
 			}
 

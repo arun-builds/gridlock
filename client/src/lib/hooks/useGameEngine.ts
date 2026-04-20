@@ -68,6 +68,8 @@ export function useGameEngine(roomId: string, token: string) {
                         status: message.payload.status,
                         timeRemaining: message.payload.timeRemaining,
                         grid: message.payload.grid || {},
+                        winnerId: undefined,
+                        scores: undefined,
                     }));
                     break;
 
@@ -86,6 +88,9 @@ export function useGameEngine(roomId: string, token: string) {
                             status: payload.status || prev.status,
                             timeRemaining: typeof payload.timeRemaining === "number" ? payload.timeRemaining : prev.timeRemaining,
                             grid: newGrid,
+                            ...(payload.status === "finished"
+                                ? {}
+                                : { winnerId: undefined, scores: undefined }),
                         };
                     });
                     break;
@@ -128,5 +133,13 @@ export function useGameEngine(roomId: string, token: string) {
         }
     }, []);
 
-    return { gameState, interactWithTile, localUserId };
+    const resetGame = useCallback(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+                type: "RESET_ROOM"
+            }));
+        }
+    }, []);
+
+    return { gameState, interactWithTile, resetGame, localUserId };
 }

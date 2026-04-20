@@ -21,7 +21,7 @@ type Room struct {
 	UnRegister chan *models.Client
 	Broadcast  chan []byte
 	Action     chan PlayerAction // Custom struct for tile clicks
-
+	Reset      chan bool
 }
 
 // incoming move from client
@@ -47,6 +47,7 @@ func NewRoom(id string) *Room {
 		UnRegister: make(chan *models.Client),
 		Broadcast:  make(chan []byte, 256),
 		Action:     make(chan PlayerAction, 256),
+		Reset:      make(chan bool),
 	}
 }
 
@@ -120,8 +121,13 @@ func (r *Room) Run() {
 				// 2. The owner clicked their own tile to fortify it
 				if tile.Health < 100 {
 					tile.Health += 10
+					if tile.Health > 100 {
+						tile.Health = 100
+					}
 				}
-				tile.Contested = false
+				// Keep flashing/contested while reclaiming damaged territory.
+				// It only becomes stable once fully fortified.
+				tile.Contested = tile.Health < 100
 			}
 
 			// Save the updated tile
@@ -148,15 +154,15 @@ func (r *Room) Run() {
 					winnerId := ""
 					isTie := false
 
-					for _, tile := range r.State.Grid{
-						if tile.OwnerID != ""{
+					for _, tile := range r.State.Grid {
+						if tile.OwnerID != "" {
 							scores[tile.OwnerID]++
 
-							if scores[tile.OwnerID] > highestScore{
+							if scores[tile.OwnerID] > highestScore {
 								highestScore = scores[tile.OwnerID]
 								winnerId = tile.OwnerID
 								isTie = false
-							}else if scores[tile.OwnerID] == highestScore{
+							} else if scores[tile.OwnerID] == highestScore {
 								isTie = true
 							}
 
@@ -218,6 +224,32 @@ func (r *Room) Run() {
 
 				dirtyTiles = make(map[string]models.Tile)
 
+			}
+
+		case <-r.Reset:
+			if r.State.Status == "finished" {
+				// 1. Wipe the state clean
+				r.State.Status = "waiting"
+				r.State.TimeRemaining = 60
+				r.State.Grid = make(map[string]models.Tile)
+				dirtyTiles = make(map[string]models.Tile)
+
+				// 2. Broadcast the fresh state to all connected players
+				resetState := map[string]interface{}{
+					"type":    "ROOM_STATE",
+					"payload": r.State,
+				}
+				msg, _ := json.Marshal(resetState)
+
+				for client := range r.Clients {
+					select {
+					case client.Send <- msg:
+					default:
+						close(client.Send)
+						delete(r.Clients, client)
+					}
+				}
+				fmt.Println("Room has been reset for a new match.")
 			}
 
 		// Broadcasting state updates to all connected  clients

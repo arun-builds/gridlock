@@ -18,7 +18,7 @@ const hashPlayerId = (id: string) => {
 
 export default function GameRoom({ token }: { token: string }) {
 
-  const { gameState, interactWithTile, localUserId } = useGameEngine("test-lobby-1", token);
+  const { gameState, interactWithTile,resetGame, localUserId } = useGameEngine("test-lobby-1", token);
 
   const colorByOwnerId = useMemo(() => {
     const ownerIds = new Set<string>();
@@ -28,21 +28,11 @@ export default function GameRoom({ token }: { token: string }) {
       if (tile.ownerId) ownerIds.add(tile.ownerId);
     });
 
-    const sortedIds = Array.from(ownerIds).sort();
-    const usedIndexes = new Set<number>();
     const colorMap: Record<string, string> = {};
-
-    sortedIds.forEach((ownerId) => {
-      const startIndex = hashPlayerId(ownerId) % PLAYER_COLORS.length;
-      let colorIndex = startIndex;
-      let attempts = 0;
-
-      while (usedIndexes.has(colorIndex) && attempts < PLAYER_COLORS.length) {
-        colorIndex = (colorIndex + 1) % PLAYER_COLORS.length;
-        attempts++;
-      }
-
-      usedIndexes.add(colorIndex);
+    // Keep colors fully stable per player ID. Avoiding collision resolution
+    // prevents mid-match remapping when active owners change.
+    Array.from(ownerIds).forEach((ownerId) => {
+      const colorIndex = hashPlayerId(ownerId) % PLAYER_COLORS.length;
       colorMap[ownerId] = PLAYER_COLORS[colorIndex];
     });
 
@@ -108,10 +98,10 @@ export default function GameRoom({ token }: { token: string }) {
         </div>
 
         <button
-          onClick={() => window.location.reload()}
+          onClick={resetGame}
           className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-lg transition-colors"
         >
-          Disconnect & Return to Lobby
+         Initialize Rematch
         </button>
       </div>
     );
