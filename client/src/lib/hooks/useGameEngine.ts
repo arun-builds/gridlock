@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
+const backendUrl = import.meta.env.VITE_WEBSOCKET_URL || 'http://localhost:8080';
 
 // These interfaces match the Go structs exactly
 export interface Tile {
