@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import GameRoom from "./components/GameRoom";
 
+const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
+
 export default function App() {
   const [nickname, setNickname] = useState("");
   const [roomCode, setRoomCode] = useState("");
@@ -32,7 +34,7 @@ export default function App() {
     setIsLoading(true);
     try {
       // 1. Ask Go to spin up a new Mutex-locked room
-      const roomRes = await fetch("http://localhost:8080/api/rooms", {
+      const roomRes = await fetch(`${backendUrl}/api/rooms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -76,7 +78,7 @@ export default function App() {
 
   // The actual HTTP handshake to get the JWT
   const executeJoin = async (name: string, id: string) => {
-    const joinRes = await fetch("http://localhost:8080/api/join", {
+    const joinRes = await fetch(`${backendUrl}/api/join`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nickname: name, roomId: id }),

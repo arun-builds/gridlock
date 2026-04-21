@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
+const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
+
 // These interfaces match the Go structs exactly
 export interface Tile {
     x: number;
@@ -45,7 +47,7 @@ export function useGameEngine(roomId: string, token: string) {
         }
 
         setGameState((prev) => ({ ...prev, status: "connecting" }));
-        const ws = new WebSocket("ws://localhost:8080/ws");
+        const ws = new WebSocket(`${backendUrl}/ws`);
         wsRef.current = ws;
 
         ws.onopen = () => {
