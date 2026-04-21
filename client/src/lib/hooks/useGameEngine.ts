@@ -27,8 +27,8 @@ export function useGameEngine(roomId: string, token: string) {
         status: "disconnected",
         timeRemaining: 60,
         maxTime: 60,
-        gridWidth: 20,
-        gridHeight: 20,
+        gridWidth: 8,
+        gridHeight: 8,
         grid: {},
     });
 

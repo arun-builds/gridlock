@@ -1,11 +1,20 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGameEngine } from "../lib/hooks/useGameEngine";
+import { GridMark } from "./GridMark";
 
-
-const PLAYER_COLORS = [
-  "bg-blue-500", "bg-red-500", "bg-emerald-500", "bg-purple-500",
-  "bg-pink-500", "bg-amber-500", "bg-cyan-500", "bg-lime-500",
-  "bg-orange-500", "bg-fuchsia-500", "bg-teal-500", "bg-indigo-500",
+const PLAYER_COLORS: { bg: string; ring: string; text: string }[] = [
+  { bg: "bg-blue-500", ring: "ring-blue-400", text: "text-blue-300" },
+  { bg: "bg-red-500", ring: "ring-red-400", text: "text-red-300" },
+  { bg: "bg-emerald-500", ring: "ring-emerald-400", text: "text-emerald-300" },
+  { bg: "bg-violet-500", ring: "ring-violet-400", text: "text-violet-300" },
+  { bg: "bg-pink-500", ring: "ring-pink-400", text: "text-pink-300" },
+  { bg: "bg-amber-500", ring: "ring-amber-400", text: "text-amber-300" },
+  { bg: "bg-cyan-500", ring: "ring-cyan-400", text: "text-cyan-300" },
+  { bg: "bg-lime-500", ring: "ring-lime-400", text: "text-lime-300" },
+  { bg: "bg-orange-500", ring: "ring-orange-400", text: "text-orange-300" },
+  { bg: "bg-fuchsia-500", ring: "ring-fuchsia-400", text: "text-fuchsia-300" },
+  { bg: "bg-teal-500", ring: "ring-teal-400", text: "text-teal-300" },
+  { bg: "bg-indigo-500", ring: "ring-indigo-400", text: "text-indigo-300" },
 ];
 
 const hashPlayerId = (id: string) => {
@@ -16,149 +25,486 @@ const hashPlayerId = (id: string) => {
   return Math.abs(hash);
 };
 
-export default function GameRoom({ token, roomId }: { token: string; roomId: string }) {
+interface GameRoomProps {
+  token: string;
+  roomId: string;
+  onLeave: () => void;
+}
 
-  const { gameState, interactWithTile, resetGame, localUserId } = useGameEngine(roomId, token);
+export default function GameRoom({ token, roomId, onLeave }: GameRoomProps) {
+  const { gameState, interactWithTile, resetGame, localUserId } = useGameEngine(
+    roomId,
+    token
+  );
 
-  const colorByOwnerId = useMemo(() => {
-    const ownerIds = new Set<string>();
-    if (localUserId) ownerIds.add(localUserId);
+  const getColorForId = useCallback((id: string) => {
+    return PLAYER_COLORS[hashPlayerId(id) % PLAYER_COLORS.length];
+  }, []);
 
+  const liveScores = useMemo(() => {
+    const scores: Record<string, number> = {};
     Object.values(gameState.grid).forEach((tile) => {
-      if (tile.ownerId) ownerIds.add(tile.ownerId);
+      if (tile.ownerId) scores[tile.ownerId] = (scores[tile.ownerId] || 0) + 1;
     });
+    return scores;
+  }, [gameState.grid]);
 
-    const colorMap: Record<string, string> = {};
-    // Keep colors fully stable per player ID. Avoiding collision resolution
-    // prevents mid-match remapping when active owners change.
-    Array.from(ownerIds).forEach((ownerId) => {
-      const colorIndex = hashPlayerId(ownerId) % PLAYER_COLORS.length;
-      colorMap[ownerId] = PLAYER_COLORS[colorIndex];
-    });
+  const rankedPlayers = useMemo(() => {
+    return Object.entries(liveScores)
+      .map(([id, score]) => ({ id, score }))
+      .sort((a, b) => b.score - a.score);
+  }, [liveScores]);
 
-    return colorMap;
-  }, [gameState.grid, localUserId]);
+  // Instant visual feedback for the tile you just tapped, independent of WS latency.
+  const [flashTiles, setFlashTiles] = useState<Record<string, number>>({});
+  const flashTimerRef = useRef<number | null>(null);
 
-  const getColorForId = (id: string) => colorByOwnerId[id] ?? PLAYER_COLORS[hashPlayerId(id) % PLAYER_COLORS.length];
+  useEffect(() => {
+    if (flashTimerRef.current) return;
+    flashTimerRef.current = window.setInterval(() => {
+      setFlashTiles((prev) => {
+        const now = performance.now();
+        let changed = false;
+        const next: Record<string, number> = {};
+        for (const key in prev) {
+          if (now - prev[key] < 160) {
+            next[key] = prev[key];
+          } else {
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 120);
+    return () => {
+      if (flashTimerRef.current) window.clearInterval(flashTimerRef.current);
+      flashTimerRef.current = null;
+    };
+  }, []);
 
-  const getTileClasses = (x: number, y: number) => {
-    const tileKey = `${x},${y}`;
-    const tile = gameState.grid[tileKey];
-
-    if (!tile) return "bg-zinc-800 hover:bg-zinc-700";
-
-    // Keep owner color visible even while under attack.
-    const baseColor = tile.ownerId ? getColorForId(tile.ownerId) : "bg-zinc-600";
-
-    if (!tile.contested) return baseColor;
-
-    // Use yellow pulse only for neutral contested tiles.
-    if (!tile.ownerId) return `${baseColor} animate-pulse ring-1 ring-yellow-300`;
-
-    // Owned + contested: preserve ownership and add attack indicator.
-    return `${baseColor} ring-2 ring-yellow-300 animate-pulse`;
-  };
+  const handleTileTap = useCallback(
+    (x: number, y: number) => {
+      const key = `${x},${y}`;
+      setFlashTiles((prev) => ({ ...prev, [key]: performance.now() }));
+      interactWithTile(x, y);
+    },
+    [interactWithTile]
+  );
 
   if (gameState.status === "connecting") {
-    return <div className="text-zinc-400 animate-pulse mt-20">Establishing secure link to Go Server...</div>;
-  }
-
-  // NEW: The Game Over Screen
-  if (gameState.status === "finished") {
-    const isTie = gameState.winnerId === "TIE";
-    const iWon = gameState.winnerId === localUserId;
-
-    // Find our own score, defaulting to 0 if we didn't capture anything
-    const myScore = gameState.scores?.[localUserId] || 0;
-
     return (
-      <div className="flex flex-col items-center justify-center w-full max-w-2xl mx-auto mt-20 bg-zinc-900 p-8 rounded-2xl border border-zinc-800 shadow-2xl">
-        <h2 className="text-5xl font-black mb-2 uppercase tracking-tighter">
-          {isTie ? "Stalemate" : iWon ? "Victory" : "Defeat"}
-        </h2>
-
-        <p className="text-zinc-400 mb-8 text-lg">
-          {isTie ? "The grid remains divided." : iWon ? "You control the grid." : "You were overrun."}
-        </p>
-
-        <div className="flex items-center gap-6 mb-8 bg-zinc-950 p-6 rounded-xl border border-zinc-800 w-full justify-between">
-          <div className="flex flex-col">
-            <span className="text-sm text-zinc-500 uppercase">Your Territory</span>
-            <span className="text-3xl font-mono text-white">{myScore} tiles</span>
-          </div>
-
-          {!isTie && !iWon && gameState.winnerId && (
-            <div className="flex flex-col items-end">
-              <span className="text-sm text-zinc-500 uppercase">Winner's Territory</span>
-              <span className="text-3xl font-mono text-red-400">
-                {gameState.scores?.[gameState.winnerId] || 0} tiles
-              </span>
-            </div>
-          )}
+      <StatusShell>
+        <div className="flex flex-col items-center gap-3">
+          <GridMark className="h-10 w-10 animate-pulse text-violet-400" />
+          <p className="font-mono text-sm uppercase tracking-widest text-zinc-500">
+            Establishing link…
+          </p>
         </div>
-
-        <button
-          onClick={resetGame}
-          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-lg transition-colors"
-        >
-         Initialize Rematch
-        </button>
-      </div>
+      </StatusShell>
     );
   }
 
-  // Figure out what color YOU are
-  const myColor = localUserId ? getColorForId(localUserId) : "bg-zinc-800";
+  if (gameState.status === "disconnected") {
+    return (
+      <StatusShell>
+        <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+          <GridMark className="h-10 w-10 text-zinc-600" />
+          <p className="text-lg font-semibold text-zinc-100">Connection lost</p>
+          <p className="text-sm text-zinc-400">
+            We couldn’t keep the link to the server open. You can head back and
+            try again.
+          </p>
+          <button
+            onClick={onLeave}
+            className="tap-instant h-11 rounded-lg bg-violet-500 px-6 text-sm font-semibold text-white hover:bg-violet-400 active:bg-violet-600"
+          >
+            Back to lobby
+          </button>
+        </div>
+      </StatusShell>
+    );
+  }
+
+  const myColor = localUserId ? getColorForId(localUserId) : PLAYER_COLORS[0];
+  const myScore = localUserId ? liveScores[localUserId] || 0 : 0;
+  const timePct = gameState.maxTime
+    ? Math.max(0, Math.min(1, gameState.timeRemaining / gameState.maxTime))
+    : 1;
 
   return (
-    <div className="flex flex-col items-center w-full max-w-4xl mx-auto">
-      {/* HUD */}
-      <div className="w-full flex justify-between items-center mb-6 bg-zinc-900 p-4 rounded-xl border border-zinc-800">
-        <div className="flex flex-col items-start">
-          <span className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Your Identity</span>
-          <div className="flex items-center gap-2">
-            <div className={`w-4 h-4 rounded-full ${myColor}`} />
-            <span className="text-sm font-mono text-zinc-300">
-              {localUserId ? localUserId.split("-")[0] : "unknown"}
+    <main className="no-tap-highlight flex min-h-dvh flex-col bg-zinc-950 text-zinc-100">
+      <Header
+        roomId={roomId}
+        timeRemaining={gameState.timeRemaining}
+        status={gameState.status}
+        timePct={timePct}
+        onLeave={onLeave}
+      />
+
+      <div className="flex flex-1 min-h-0 items-center justify-center px-3 py-3 sm:px-6 sm:py-4">
+        <Board
+          gameState={gameState}
+          localUserId={localUserId}
+          getColorForId={getColorForId}
+          flashTiles={flashTiles}
+          onTap={handleTileTap}
+        />
+      </div>
+
+      <Scoreboard
+        rankedPlayers={rankedPlayers}
+        myUserId={localUserId}
+        myColor={myColor}
+        myScore={myScore}
+        getColorForId={getColorForId}
+      />
+
+      {gameState.status === "finished" && (
+        <GameOverOverlay
+          gameState={gameState}
+          localUserId={localUserId}
+          onRematch={resetGame}
+          onLeave={onLeave}
+        />
+      )}
+    </main>
+  );
+}
+
+function Header({
+  roomId,
+  timeRemaining,
+  status,
+  timePct,
+  onLeave,
+}: {
+  roomId: string;
+  timeRemaining: number;
+  status: string;
+  timePct: number;
+  onLeave: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      if (navigator.share && /Mobi|Android|iPhone/i.test(navigator.userAgent)) {
+        await navigator.share({ title: "GridLock room", text: roomId });
+      } else {
+        await navigator.clipboard.writeText(roomId);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      // no-op
+    }
+  };
+
+  return (
+    <header className="sticky top-0 z-10 border-b border-zinc-900 bg-zinc-950/90 backdrop-blur-sm">
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3 sm:px-6">
+        <button
+          onClick={onLeave}
+          aria-label="Leave room"
+          className="tap-instant flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4"
+            aria-hidden
+          >
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
+
+        <button
+          onClick={handleCopy}
+          className="tap-instant flex min-w-0 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-left hover:border-zinc-700"
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-zinc-500">
+            Room
+          </span>
+          <span className="truncate font-mono text-sm font-bold tracking-[0.2em] text-white">
+            {roomId}
+          </span>
+          <span className="text-xs text-violet-300">{copied ? "copied" : "copy"}</span>
+        </button>
+
+        <div className="ml-auto flex items-center gap-3">
+          <StatusPill status={status} />
+          <div className="text-right">
+            <div className="font-mono text-xs uppercase tracking-widest text-zinc-500">
+              Time
+            </div>
+            <div className="font-mono text-xl font-black leading-none text-white tabular-nums">
+              {formatTime(timeRemaining)}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="h-0.5 w-full bg-zinc-900">
+        <div
+          className="h-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-emerald-500 transition-[width] duration-300"
+          style={{ width: `${timePct * 100}%` }}
+        />
+      </div>
+    </header>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    waiting: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+    playing: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+    finished: "bg-zinc-500/15 text-zinc-300 ring-zinc-500/30",
+  };
+  const cls = styles[status] ?? "bg-zinc-500/15 text-zinc-300 ring-zinc-500/30";
+  return (
+    <span
+      className={`hidden rounded-full px-3 py-1 font-mono text-[10px] uppercase tracking-widest ring-1 sm:inline-block ${cls}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function Board({
+  gameState,
+  localUserId,
+  getColorForId,
+  flashTiles,
+  onTap,
+}: {
+  gameState: ReturnType<typeof useGameEngine>["gameState"];
+  localUserId: string;
+  getColorForId: (id: string) => (typeof PLAYER_COLORS)[number];
+  flashTiles: Record<string, number>;
+  onTap: (x: number, y: number) => void;
+}) {
+  const w = gameState.gridWidth;
+  const h = gameState.gridHeight;
+
+  const tileClass = (x: number, y: number) => {
+    const key = `${x},${y}`;
+    const tile = gameState.grid[key];
+    const flashed = !!flashTiles[key];
+
+    let base = "bg-zinc-800/80";
+    let extras = "";
+
+    if (tile?.ownerId) {
+      base = getColorForId(tile.ownerId).bg;
+    }
+
+    if (tile?.contested) {
+      extras = "ring-2 ring-yellow-300/90 animate-pulse";
+    }
+
+    const minePressed = flashed ? "animate-tile-pop brightness-125" : "";
+    const youOwn = tile?.ownerId && tile.ownerId === localUserId ? "ring-1 ring-white/30" : "";
+
+    return `tap-instant rounded-[3px] transition-[background-color,box-shadow] duration-100 active:brightness-110 ${base} ${extras} ${youOwn} ${minePressed}`;
+  };
+
+  return (
+    <div
+      className="grid rounded-xl border border-zinc-800 bg-zinc-900/60 p-1.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]"
+      style={{
+        gridTemplateColumns: `repeat(${w}, minmax(0, 1fr))`,
+        gap: "2px",
+        aspectRatio: `${w} / ${h}`,
+        width: `min(100%, calc((100dvh - 12.5rem) * ${w / h}))`,
+      }}
+    >
+      {Array.from({ length: h }).map((_, y) =>
+        Array.from({ length: w }).map((_, x) => (
+          <button
+            key={`${x}-${y}`}
+            className={tileClass(x, y)}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              onTap(x, y);
+            }}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+function Scoreboard({
+  rankedPlayers,
+  myUserId,
+  myColor,
+  myScore,
+  getColorForId,
+}: {
+  rankedPlayers: { id: string; score: number }[];
+  myUserId: string;
+  myColor: (typeof PLAYER_COLORS)[number];
+  myScore: number;
+  getColorForId: (id: string) => (typeof PLAYER_COLORS)[number];
+}) {
+  return (
+    <footer className="sticky bottom-0 z-10 border-t border-zinc-900 bg-zinc-950/95 backdrop-blur-sm">
+      <div
+        className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3 sm:px-6"
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
+      >
+        <div className="flex items-center gap-2.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2">
+          <div className={`h-2.5 w-2.5 rounded-full ${myColor.bg}`} />
+          <div className="flex min-w-0 flex-col">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+              You
             </span>
+            <span className="truncate font-mono text-sm font-bold text-white">
+              {myUserId ? myUserId.split("-")[0] : "—"}
+            </span>
+          </div>
+          <div className="ml-2 border-l border-zinc-800 pl-3 text-right">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+              Tiles
+            </div>
+            <div className="font-mono text-base font-black tabular-nums text-white">
+              {myScore}
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-col items-center">
-          <span className="text-xs text-zinc-500 uppercase tracking-wider">Room Code</span>
-          <span className="text-blue-400 font-mono font-bold tracking-widest bg-blue-900/30 px-2 py-1 rounded">
-            {roomId}
-          </span>
-        </div>
-
-        <div className="flex flex-col items-center">
-          <span className="text-xs text-zinc-500 uppercase tracking-wider">Status</span>
-          <span className="text-green-400 font-bold uppercase">{gameState.status}</span>
-        </div>
-
-        <div className="flex flex-col items-end">
-          <span className="text-xs text-zinc-500 uppercase tracking-wider">Time</span>
-          <span className="text-3xl font-mono font-black text-white">
-            {gameState.timeRemaining}s
-          </span>
+        <div className="flex flex-1 items-center gap-2 overflow-x-auto">
+          {rankedPlayers.length === 0 && (
+            <div className="w-full rounded-lg border border-dashed border-zinc-800 px-3 py-2 text-center font-mono text-[11px] uppercase tracking-widest text-zinc-600">
+              Claim a tile to enter the board
+            </div>
+          )}
+          {rankedPlayers.map((p, idx) => {
+            const c = getColorForId(p.id);
+            const isMe = p.id === myUserId;
+            return (
+              <div
+                key={p.id}
+                className={`flex shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 ${
+                  isMe
+                    ? "border-zinc-700 bg-zinc-800"
+                    : "border-zinc-800 bg-zinc-900"
+                }`}
+              >
+                <span className="font-mono text-[10px] tabular-nums text-zinc-500">
+                  #{idx + 1}
+                </span>
+                <div className={`h-2 w-2 rounded-full ${c.bg}`} />
+                <span className="font-mono text-xs font-semibold text-zinc-200">
+                  {p.id.split("-")[0]}
+                </span>
+                <span className="font-mono text-xs font-bold tabular-nums text-white">
+                  {p.score}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
+    </footer>
+  );
+}
 
-      {/* Grid */}
-      <div 
-        className="w-full aspect-square bg-zinc-900 border-2 border-zinc-800 rounded-lg p-2 gap-1 grid"
-        style={{ gridTemplateColumns: `repeat(${gameState.gridWidth}, minmax(0, 1fr))` }}
-      >
-        {Array.from({ length: gameState.gridHeight }).map((_, y) => (
-          Array.from({ length: gameState.gridWidth }).map((_, x) => (
-            <button
-              key={`${x}-${y}`}
-              className={`w-full h-full rounded-sm transition-colors duration-75 ${getTileClasses(x, y)}`}
-              onPointerDown={() => interactWithTile(x, y)}
-            />
-          ))
-        ))}
+function GameOverOverlay({
+  gameState,
+  localUserId,
+  onRematch,
+  onLeave,
+}: {
+  gameState: ReturnType<typeof useGameEngine>["gameState"];
+  localUserId: string;
+  onRematch: () => void;
+  onLeave: () => void;
+}) {
+  const isTie = gameState.winnerId === "TIE";
+  const iWon = gameState.winnerId === localUserId;
+  const myScore = gameState.scores?.[localUserId] ?? 0;
+  const winnerScore = gameState.winnerId
+    ? gameState.scores?.[gameState.winnerId] ?? 0
+    : 0;
+
+  const title = isTie ? "Stalemate" : iWon ? "Victory" : "Defeat";
+  const subtitle = isTie
+    ? "The grid stayed divided."
+    : iWon
+      ? "You locked the grid down."
+      : "You were overrun.";
+  const accent = isTie
+    ? "text-zinc-200"
+    : iWon
+      ? "text-emerald-300"
+      : "text-red-300";
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-end justify-center bg-black/70 p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl sm:p-8">
+        <div className="mb-6 text-center">
+          <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.3em] text-zinc-500">
+            Match complete
+          </div>
+          <h2 className={`text-4xl font-black tracking-tight sm:text-5xl ${accent}`}>
+            {title}
+          </h2>
+          <p className="mt-2 text-sm text-zinc-400">{subtitle}</p>
+        </div>
+
+        <div className="mb-6 grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+              You
+            </div>
+            <div className="mt-1 font-mono text-3xl font-black tabular-nums text-white">
+              {myScore}
+            </div>
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+              {iWon ? "Runner-up" : "Winner"}
+            </div>
+            <div className="mt-1 font-mono text-3xl font-black tabular-nums text-white">
+              {isTie ? "—" : winnerScore}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onLeave}
+            className="tap-instant h-12 flex-1 rounded-xl border border-zinc-800 bg-zinc-900 text-sm font-semibold text-zinc-200 hover:border-zinc-700"
+          >
+            Leave
+          </button>
+          <button
+            onClick={onRematch}
+            className="tap-instant h-12 flex-1 rounded-xl bg-violet-500 text-sm font-semibold text-white hover:bg-violet-400 active:bg-violet-600"
+          >
+            Rematch
+          </button>
+        </div>
       </div>
     </div>
   );
+}
+
+function StatusShell({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="flex min-h-dvh items-center justify-center bg-zinc-950 p-4 text-zinc-100">
+      {children}
+    </main>
+  );
+}
+
+function formatTime(seconds: number) {
+  const s = Math.max(0, Math.floor(seconds));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
 }

@@ -31,7 +31,6 @@ func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
 		if origin != "" {
 			w.Header().Set("Vary", "Origin")
 			if origin != allowedOrigin {
-				log.Printf("CORS rejected: origin=%q allowed=%q path=%s", origin, allowedOrigin, r.URL.Path)
 				http.Error(w, "CORS origin not allowed", http.StatusForbidden)
 				return
 			}
@@ -62,7 +61,6 @@ func main() {
 
 	appEnv := os.Getenv("APP_ENV")
 	allowedOrigin := resolveAllowedOrigin(appEnv)
-	log.Printf("CORS allowed origin: %q (APP_ENV=%q)", allowedOrigin, appEnv)
 
 	port := os.Getenv("PORT")
 
@@ -89,10 +87,10 @@ func main() {
 
 		// Set defaults
 		if settings.Width == 0 {
-			settings.Width = 20
+			settings.Width = 8
 		}
 		if settings.Height == 0 {
-			settings.Height = 20
+			settings.Height = 8
 		}
 		if settings.TimeLimit == 0 {
 			settings.TimeLimit = 60
