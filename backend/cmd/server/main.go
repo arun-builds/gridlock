@@ -12,6 +12,42 @@ import (
 	"github.com/joho/godotenv"
 )
 
+func resolveAllowedOrigin(appEnv string) string {
+	allowedOrigin := os.Getenv("FRONTEND_URL")
+	if allowedOrigin == "" {
+		if appEnv == "production" {
+			log.Fatal("FATAL: FRONTEND_URL must be set in production to prevent CORS vulnerabilities.")
+		}
+		log.Println("Notice: FRONTEND_URL not set. Defaulting to local React port for development.")
+		allowedOrigin = "http://localhost:5173"
+	}
+	return allowedOrigin
+}
+
+func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Vary", "Origin")
+			if origin != allowedOrigin {
+				http.Error(w, "CORS origin not allowed", http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 
 	if err := godotenv.Load(); err != nil {
@@ -22,19 +58,8 @@ func main() {
 		log.Fatal("FATAL: JWT_SECRET environment variable is not set. Server cannot start.")
 	}
 
-	allowedOrigin := os.Getenv("FRONTEND_URL")
 	appEnv := os.Getenv("APP_ENV")
-
-	if allowedOrigin == "" {
-		if appEnv == "production" {
-			
-			log.Fatal("FATAL: FRONTEND_URL must be set in production to prevent CORS vulnerabilities.")
-		} else {
-			
-			log.Println("Notice: FRONTEND_URL not set. Defaulting to local React port for development.")
-			allowedOrigin = "http://localhost:5173" 
-		}
-	}
+	allowedOrigin := resolveAllowedOrigin(appEnv)
 
 	port := os.Getenv("PORT")
 
@@ -44,15 +69,11 @@ func main() {
 
 	manager := game.NewManager()
 
-	http.HandleFunc("/api/rooms", func(w http.ResponseWriter, r *http.Request) {
-		
+	mux := http.NewServeMux()
 
-		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
+	mux.HandleFunc("/api/rooms", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -79,15 +100,7 @@ func main() {
 		})
 	})
 
-	http.HandleFunc("/api/join", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+	mux.HandleFunc("/api/join", func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -125,13 +138,13 @@ func main() {
 
 	})
 
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		ws.ServeWs(manager, w, r)
 	})
 
 	log.Println("GridLock Backend running on http://localhost:" + port)
 
-	err := http.ListenAndServe(":"+port, nil)
+	err := http.ListenAndServe(":"+port, corsMiddleware(mux, allowedOrigin))
 	if err != nil {
 		log.Fatal("Server failed to start: ", err)
 	}
