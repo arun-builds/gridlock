@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/arun-builds/gridlock-backend/internal/auth"
 	"github.com/arun-builds/gridlock-backend/internal/game"
@@ -13,7 +14,7 @@ import (
 )
 
 func resolveAllowedOrigin(appEnv string) string {
-	allowedOrigin := os.Getenv("FRONTEND_URL")
+	allowedOrigin := strings.TrimRight(strings.TrimSpace(os.Getenv("FRONTEND_URL")), "/")
 	if allowedOrigin == "" {
 		if appEnv == "production" {
 			log.Fatal("FATAL: FRONTEND_URL must be set in production to prevent CORS vulnerabilities.")
@@ -30,6 +31,7 @@ func corsMiddleware(next http.Handler, allowedOrigin string) http.Handler {
 		if origin != "" {
 			w.Header().Set("Vary", "Origin")
 			if origin != allowedOrigin {
+				log.Printf("CORS rejected: origin=%q allowed=%q path=%s", origin, allowedOrigin, r.URL.Path)
 				http.Error(w, "CORS origin not allowed", http.StatusForbidden)
 				return
 			}
@@ -60,6 +62,7 @@ func main() {
 
 	appEnv := os.Getenv("APP_ENV")
 	allowedOrigin := resolveAllowedOrigin(appEnv)
+	log.Printf("CORS allowed origin: %q (APP_ENV=%q)", allowedOrigin, appEnv)
 
 	port := os.Getenv("PORT")
 
@@ -84,15 +87,18 @@ func main() {
 		}
 		json.NewDecoder(r.Body).Decode(&settings)
 
-		// Set defaults 
-		if settings.Width == 0 { settings.Width = 20 }
-		if settings.Height == 0 { settings.Height = 20 }
-		if settings.TimeLimit == 0 { settings.TimeLimit = 60 }
+		// Set defaults
+		if settings.Width == 0 {
+			settings.Width = 20
+		}
+		if settings.Height == 0 {
+			settings.Height = 20
+		}
+		if settings.TimeLimit == 0 {
+			settings.TimeLimit = 60
+		}
 
 		roomCode := manager.CreateRoom(settings.Width, settings.Height, settings.TimeLimit)
-
-
-	
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
@@ -118,7 +124,7 @@ func main() {
 		}
 
 		_, exists := manager.GetRoom(requestBody.RoomId)
-		if !exists{
+		if !exists {
 			http.Error(w, "Room not found or has expired", http.StatusNotFound)
 			return
 		}
@@ -128,8 +134,6 @@ func main() {
 			http.Error(w, "Failed to generate session", http.StatusInternalServerError)
 			return
 		}
-
-
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
