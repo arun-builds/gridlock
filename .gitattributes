@@ -1,0 +1,2 @@
+client/**/*.ts linguist-vendored
+client/**/*.tsx linguist-vendored
